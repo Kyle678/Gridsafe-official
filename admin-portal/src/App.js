@@ -103,7 +103,7 @@ const TrainingView = () => {
         // Attempt to retrieve from API
         // Using a hypothetical endpoint here. In this demo environment, 
         // this will likely fail or 404, triggering the catch block.
-        const response = await fetch('https://api.gridsafe.app/v1/resources');
+        const response = await fetch('http://localhost:5000/v1/resources');
         
         if (!response.ok) {
           throw new Error('API unavailable');
