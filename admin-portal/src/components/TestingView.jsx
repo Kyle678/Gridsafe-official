@@ -1,15 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { Beaker, Cpu, Loader2 } from 'lucide-react';
-import { 
-  BarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  ResponsiveContainer 
-} from 'recharts';
+import React, { useState, useEffect, useRef } from 'react';
+import { Beaker, Cpu, Loader2, AlertCircle, FileText, Image as ImageIcon } from 'lucide-react';
 import { Card, SectionHeader, SelectionItem, StatusBadge } from './SharedComponents';
+
+const API_BASE = 'http://localhost:5000/api';
 
 const TestingView = () => {
   // --- Data State ---
@@ -22,58 +15,32 @@ const TestingView = () => {
   const [selectedModel, setSelectedModel] = useState(null);
   const [isTesting, setIsTesting] = useState(false);
   const [showResults, setShowResults] = useState(false);
+  const [resultData, setResultData] = useState({ report: '', images: [] });
+  const [error, setError] = useState(null);
+
+  const pollInterval = useRef(null);
 
   // 1. Fetch available resources on load
   useEffect(() => {
     const fetchData = async () => {
       setIsLoadingData(true);
-      
-      // Fallback data structure
-      const defaultTestingSets = [
-        { id: 't1', name: 'Test Set Delta', size: '200 MB • 5k Samples' },
-        { id: 't2', name: 'Test Set Epsilon', size: '450 MB • 12k Samples' },
-        { id: 't3', name: 'Test Set Zeta', size: '150 MB • 3k Samples' },
-        { id: 't4', name: 'Test Set Eta', size: '300 MB • 8k Samples' },
-        { id: 't5', name: 'Test Set Theta', size: '500 MB • 15k Samples' },
-      ];
-
-      // Updated data structure for Trained Models
-      const defaultTrainedModels = [
-        { 
-            id: "tm1", 
-            name: "XGBoost on Alpha - Jan 2024", 
-            type: "Gradient Boosting",
-            r2_score: 0.82
-        },
-        { 
-            id: "tm2", 
-            name: "Random Forest on Beta - Feb 2024", 
-            type: "Ensemble",
-            r2_score: 0.76
-        },
-        { 
-            id: "tm3", 
-            name: "Neural Net on Gamma - Mar 2024", 
-            type: "Deep Learning",
-            r2_score: 0.89
-        }
-      ];
-
       try {
-        // We reuse the resources endpoint. In a real app, you might have a specific /api/test-sets endpoint
-        const response = await fetch('http://localhost:5000/api/resources');
-        if (!response.ok) throw new Error('API unavailable');
-        
-        const data = await response.json();
-        
-        // Mapping the generic "trainingSets" to "testingSets" for this view's context
-        // We look for 'trainedModels' in the response now, falling back to defaults if not present
-        setTestingSets(data.trainingSets || defaultTestingSets); 
-        setTrainedModels(data.trainedModels || defaultTrainedModels);
+        // Fetch Datasets
+        const setsRes = await fetch(`${API_BASE}/datasets`);
+        const setsData = await setsRes.json();
+        const mappedSets = (setsData.datasets || []).map(f => ({
+            id: f, name: f, size: 'CSV'
+        }));
+        setTestingSets(mappedSets);
+
+        // Fetch Models
+        const modelsRes = await fetch(`${API_BASE}/models`);
+        const modelsData = await modelsRes.json();
+        setTrainedModels(modelsData.models || []);
+
       } catch (error) {
-        console.warn("Resource fetch failed, using defaults for UI demo.");
-        setTestingSets(defaultTestingSets);
-        setTrainedModels(defaultTrainedModels);
+        console.error("API Error", error);
+        setError("Could not load resources.");
       } finally {
         setIsLoadingData(false);
       }
@@ -81,25 +48,53 @@ const TestingView = () => {
     fetchData();
   }, []);
 
-  const barData = [
-    { name: 'Accuracy', value: 94 },
-    { name: 'Precision', value: 88 },
-    { name: 'Recall', value: 92 },
-    { name: 'F1 Score', value: 90 },
-  ];
+  // 2. Polling Logic
+  useEffect(() => {
+      if (isTesting) {
+          pollInterval.current = setInterval(checkResults, 2000);
+      }
+      return () => clearInterval(pollInterval.current);
+  }, [isTesting]);
 
-  const handleTest = () => {
+  const checkResults = async () => {
+      try {
+          const res = await fetch(`${API_BASE}/results/test_latest`);
+          const data = await res.json();
+          if (data.status === 'ready') {
+              clearInterval(pollInterval.current);
+              setIsTesting(false);
+              setResultData({ report: data.report, images: data.images });
+              setShowResults(true);
+          }
+      } catch (err) { console.warn("Polling error", err); }
+  };
+
+  const handleTest = async () => {
     if (!selectedTestSet || !selectedModel) return;
     setIsTesting(true);
     setShowResults(false);
-    setTimeout(() => {
-      setIsTesting(false);
-      setShowResults(true);
-    }, 1200);
+    setError(null);
+
+    try {
+        const response = await fetch(`${API_BASE}/test`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model_path: selectedModel.id, // ID is the full path
+                dataset: selectedTestSet.id,
+                label_col: "label" // Ensure this matches your CSV!
+            })
+        });
+        if (!response.ok) throw new Error("Testing failed to start");
+    } catch (err) {
+        setError(err.message);
+        setIsTesting(false);
+    }
   };
 
   return (
     <div className="grid grid-cols-12 gap-6 p-6 min-h-full">
+      {/* LEFT COL: CONTROLS */}
       <div className="col-span-12 lg:col-span-4 flex flex-col gap-6">
         <Card className="flex-1 flex flex-col relative max-h-[calc(100vh-3rem)]">
           <div className="h-1 w-full bg-gradient-to-r from-pink-500 to-purple-500 absolute top-0 left-0" />
@@ -112,7 +107,7 @@ const TestingView = () => {
                </div>
             ) : (
               <div className="space-y-6">
-                {/* Test Set Selection Box */}
+                {/* Test Set Selection */}
                 <div>
                   <SectionHeader icon={Beaker} title="Select Test Set" />
                   <div className="h-40 overflow-y-auto custom-scrollbar pr-2 space-y-2 border border-slate-800 rounded-lg p-2 bg-slate-900/20">
@@ -125,26 +120,24 @@ const TestingView = () => {
                         onClick={() => setSelectedTestSet(set)}
                       />
                     ))}
+                    {testingSets.length === 0 && <p className="text-slate-500 text-sm">No datasets found.</p>}
                   </div>
                 </div>
 
-                {/* Trained Model Selection Box */}
+                {/* Trained Model Selection */}
                 <div>
                   <SectionHeader icon={Cpu} title="Select Trained Model" />
                   <div className="h-40 overflow-y-auto custom-scrollbar pr-2 space-y-2 border border-slate-800 rounded-lg p-2 bg-slate-900/20">
                     {trainedModels.map(model => (
                       <SelectionItem 
                         key={model.id}
-                        label={model.name}
-                        // Updated to show Type and R2 Score
-                        subtext={model.r2_score 
-                          ? `${model.type} • R²: ${model.r2_score}` 
-                          : (model.type || "Ready for Inference")
-                        }
+                        label={model.name} // Shows folder/filename
+                        subtext={model.type}
                         isSelected={selectedModel?.id === model.id}
                         onClick={() => setSelectedModel(model)}
                       />
                     ))}
+                    {trainedModels.length === 0 && <p className="text-slate-500 text-sm">No models found in test_results/</p>}
                   </div>
                 </div>
               </div>
@@ -152,10 +145,11 @@ const TestingView = () => {
           </div>
 
           <div className="p-6 border-t border-slate-800 bg-slate-900/50">
-              <div className="grid grid-cols-2 gap-4 mb-6">
-              <StatusBadge label="Test Set" value={selectedTestSet ? selectedTestSet.name : 'None'} />
-              <StatusBadge label="Model" value={selectedModel ? selectedModel.name : 'None'} />
-            </div>
+             <div className="grid grid-cols-2 gap-4 mb-6">
+               <StatusBadge label="Test Set" value={selectedTestSet ? selectedTestSet.name : 'None'} />
+               {/* Truncate long model names for display */}
+               <StatusBadge label="Model" value={selectedModel ? selectedModel.name.split('-')[0] : 'None'} />
+             </div>
             <button
               onClick={handleTest}
               disabled={!selectedTestSet || !selectedModel || isTesting}
@@ -172,14 +166,13 @@ const TestingView = () => {
                    <Loader2 className="animate-spin" size={20} />
                    Testing...
                 </>
-              ) : (
-                'Run Diagnostics'
-              )}
+              ) : 'Run Diagnostics'}
             </button>
           </div>
         </Card>
       </div>
 
+      {/* RIGHT COL: RESULTS */}
       <div className="col-span-12 lg:col-span-8">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-2xl font-bold text-slate-100">Test Results</h2>
@@ -189,37 +182,73 @@ const TestingView = () => {
             </span>
           )}
         </div>
-        <Card className="h-[600px] flex items-center justify-center relative">
-          {!showResults && !isTesting && (
-             <div className="text-center p-8">
+        <Card className="h-[600px] flex flex-col relative overflow-hidden">
+          
+          {/* Idle */}
+          {!showResults && !isTesting && !error && (
+             <div className="h-full flex flex-col items-center justify-center p-8">
               <Beaker size={64} className="text-slate-700 mx-auto mb-4" />
               <p className="text-xl font-medium text-slate-400">Ready to Test</p>
-              <p className="text-slate-600 mt-2">Select a test set and model</p>
+              <p className="text-slate-600 mt-2">Select a saved model and a dataset.</p>
             </div>
           )}
+
+          {/* Loading */}
           {isTesting && (
-             <div className="text-center z-10">
+             <div className="h-full flex flex-col items-center justify-center z-10">
               <div className="w-16 h-16 border-4 border-pink-500/30 border-t-pink-500 rounded-full animate-spin mx-auto mb-6"></div>
               <p className="text-lg text-pink-400 font-medium animate-pulse">Running Diagnostics...</p>
             </div>
           )}
+
+          {/* Error */}
+          {error && (
+            <div className="h-full flex flex-col items-center justify-center p-8">
+              <AlertCircle size={64} className="text-red-500/50 mx-auto mb-4" />
+              <p className="text-xl font-medium text-red-400">Testing Failed</p>
+              <p className="text-slate-500 mt-2">{error}</p>
+              <button onClick={() => setError(null)} className="mt-6 px-4 py-2 bg-slate-800 rounded-lg text-slate-300">Dismiss</button>
+            </div>
+          )}
+
+          {/* Results Display */}
           {showResults && (
-            <div className="w-full h-full p-6 animate-in fade-in duration-500">
-              <div className="mb-6">
-                 <h3 className="text-lg font-semibold text-slate-200">Model Performance</h3>
-                 <p className="text-slate-500 text-sm">Key Metrics Overview</p>
-              </div>
-              <div className="w-full h-[450px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={barData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
-                    <XAxis dataKey="name" stroke="#94a3b8" tickLine={false} axisLine={false} />
-                    <YAxis stroke="#94a3b8" tickLine={false} axisLine={false} domain={[0, 100]} />
-                    <Tooltip cursor={{fill: '#334155', opacity: 0.2}} contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', color: '#f8fafc' }} />
-                    <Bar dataKey="value" fill="#ec4899" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
+            <div className="flex-1 flex flex-col h-full overflow-hidden">
+                <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-6">
+                    
+                    {/* Text Report */}
+                    <div className="bg-slate-950 p-4 rounded-lg border border-slate-800 font-mono text-sm text-slate-300 overflow-x-auto">
+                        <div className="flex items-center gap-2 mb-2 text-pink-400">
+                            <FileText size={16} />
+                            <span className="font-semibold uppercase tracking-wider text-xs">Test Report</span>
+                        </div>
+                        <pre>{resultData.report}</pre>
+                    </div>
+
+                    {/* Images */}
+                    {resultData.images.length > 0 && (
+                        <div>
+                            <div className="flex items-center gap-2 mb-4 text-pink-400">
+                                <ImageIcon size={16} />
+                                <span className="font-semibold uppercase tracking-wider text-xs">Visualizations</span>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {resultData.images.map((imgName) => (
+                                    <div key={imgName} className="bg-slate-800/30 p-2 rounded-lg border border-slate-700">
+                                        <p className="text-xs text-slate-400 mb-2 text-center capitalize">
+                                            {imgName.replace('.png', '').replace(/_/g, ' ')}
+                                        </p>
+                                        <img 
+                                            src={`${API_BASE}/results/test_latest/image/${imgName}?t=${Date.now()}`}
+                                            alt={imgName}
+                                            className="w-full h-auto rounded border border-slate-600/50"
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </div>
             </div>
           )}
         </Card>

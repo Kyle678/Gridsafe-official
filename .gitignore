@@ -7,3 +7,5 @@ __pycache__/
 env/
 backend/xgboost_scripts/test_results/
 backend/xgboost_scripts/training_data/
+backend/xgboost_scripts/datasets/
+.DS_Store
