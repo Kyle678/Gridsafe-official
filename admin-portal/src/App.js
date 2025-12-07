@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
-import { LayoutDashboard, Database, Beaker, Zap, Settings, FilePlus } from 'lucide-react';
+// Added Activity icon for Simulation
+import { LayoutDashboard, Database, Beaker, Zap, Settings, FilePlus, Activity } from 'lucide-react';
 import TrainingView from './components/TrainingView';
 import TestingView from './components/TestingView';
 import LedsView from './components/LedsView';
 import LogGenerationView from './components/LogGenerationView';
+import SimulationView from './components/SimulationView'; // <--- Import
 
 export default function App() {
-  // --- CHANGE: Default is now 'generation' ---
   const [activeTab, setActiveTab] = useState('generation');
 
   const renderContent = () => {
@@ -14,6 +15,7 @@ export default function App() {
       case 'training': return <TrainingView />;
       case 'testing': return <TestingView />;
       case 'generation': return <LogGenerationView />;
+      case 'simulation': return <SimulationView />; // <--- Added Case
       case 'leds': return <LedsView />;
       default: return <LogGenerationView />;
     }
@@ -34,10 +36,11 @@ export default function App() {
 
         <div className="flex items-center gap-1 bg-slate-800/50 p-1 rounded-lg border border-slate-800">
           {[
-            // --- CHANGE: Moved Data Gen to the top ---
             { id: 'generation', label: 'Data Gen', icon: FilePlus },
             { id: 'training', label: 'Training', icon: Database },
             { id: 'testing', label: 'Testing', icon: Beaker },
+            // Added Sim Tab
+            { id: 'simulation', label: 'Simulate', icon: Activity },
             { id: 'leds', label: 'LEDs', icon: Zap }
           ].map(tab => (
             <button

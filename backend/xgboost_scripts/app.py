@@ -247,5 +247,51 @@ def generate_data():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route('/api/simulate', methods=['POST'])
+def simulate_model():
+    """
+    Runs a model against a dataset and returns row-by-row predictions
+    for the frontend to 'playback'.
+    """
+    try:
+        data = request.json
+        model_path = data.get('model_path')
+        dataset = data.get('dataset')
+        
+        if not model_path or not dataset:
+            return jsonify({"error": "Missing params"}), 400
+
+        # 1. Load Model
+        bot = XGridBoost()
+        bot.load_model(model_path)
+        
+        # 2. Load Data
+        data_path = os.path.join(DATASETS_DIR, dataset)
+        # We load with 'label' (or whatever column name) just to separate X and y
+        # We assume the user picks the right label column, defaulting to 'label'
+        label_col = data.get('label_col', 'label')
+        X, y = bot.load_data(data_path, label_col) 
+        
+        # 3. Predict
+        preds = bot.predict(X)
+        
+        # 4. Combine for Frontend
+        # We create a list of dicts: [{voltage: 120, current: 15, actual: 0, predicted: 0}, ...]
+        output = X.copy()
+        output['actual'] = y
+        output['predicted'] = preds
+        
+        # Limit to first 500 rows to prevent browser lag during prototype
+        if len(output) > 500:
+            output = output.head(500)
+            
+        result_json = output.to_dict(orient='records')
+        
+        return jsonify({"status": "success", "data": result_json})
+        
+    except Exception as e:
+        print(f"Simulation Error: {e}")
+        return jsonify({"error": str(e)}), 500
+
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
