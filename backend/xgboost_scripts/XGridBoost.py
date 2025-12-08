@@ -31,13 +31,16 @@ class XGridBoost:
         df = pd.read_csv(filepath)
         
         # --- FIX: Drop metadata columns ---
-        ignore_cols = ['dataset_id', 'log_id']
+        ignore_cols = ['dataset_id', 'log_id', 'timestamp'] 
+        
+        # This list comprehension ensures we don't crash if one of these is missing
         df = df.drop(columns=[c for c in ignore_cols if c in df.columns])
         
         # Verify label exists
         if label_col not in df.columns:
             raise ValueError(f"Label column '{label_col}' not found.")
 
+        # X is everything remaining except the label
         X = df.drop(columns=[label_col])
         y = df[label_col]
         

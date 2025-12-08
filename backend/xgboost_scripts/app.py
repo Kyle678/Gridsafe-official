@@ -246,7 +246,7 @@ def generate_data():
         return jsonify({"status": "success", "details": result})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
+    
 @app.route('/api/simulate', methods=['POST'])
 def simulate_model():
     """
@@ -265,32 +265,45 @@ def simulate_model():
         bot = XGridBoost()
         bot.load_model(model_path)
         
-        # 2. Load Data
+        # 2. Get Data Paths
         data_path = os.path.join(DATASETS_DIR, dataset)
-        # We load with 'label' (or whatever column name) just to separate X and y
-        # We assume the user picks the right label column, defaulting to 'label'
         label_col = data.get('label_col', 'label')
+
+        # 3. Generate Predictions (Using the clean, training-ready data)
+        # bot.load_data handles dropping 'timestamp' automatically so the model doesn't crash
         X, y = bot.load_data(data_path, label_col) 
-        
-        # 3. Predict
         preds = bot.predict(X)
         
-        # 4. Combine for Frontend
-        # We create a list of dicts: [{voltage: 120, current: 15, actual: 0, predicted: 0}, ...]
-        output = X.copy()
-        output['actual'] = y
-        output['predicted'] = preds
+        # 4. Prepare Response Data (Need to recover timestamps!)
+        # We read the raw file again because 'X' has stripped the metadata columns.
+        # We want the frontend to receive the full context (timestamps, IDs, etc.)
+        df_full = pd.read_csv(data_path)
         
-        # Limit to first 500 rows to prevent browser lag during prototype
-        if len(output) > 500:
-            output = output.head(500)
-            
-        result_json = output.to_dict(orient='records')
+        # Append the prediction results to the full dataframe
+        df_full['predicted'] = preds
+        
+        # Standardize the label column name for the frontend
+        if label_col in df_full.columns:
+            df_full['actual'] = df_full[label_col]
+        else:
+            df_full['actual'] = 0 # Fallback if label is missing
+
+        # Ensure timestamp is string-formatted for JSON (avoids serialization errors)
+        if 'timestamp' in df_full.columns:
+            df_full['timestamp'] = df_full['timestamp'].astype(str)
+
+        # 5. Convert to JSON
+        # We limit to 2000 rows by default to prevent crashing the browser if the file is huge
+        if len(df_full) > 2000:
+            df_full = df_full.head(2000)
+
+        result_json = df_full.to_dict(orient='records')
         
         return jsonify({"status": "success", "data": result_json})
-        
+
     except Exception as e:
         print(f"Simulation Error: {e}")
+        # traceback.print_exc() # Uncomment if you need deep debugging
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':

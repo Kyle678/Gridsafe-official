@@ -1,7 +1,6 @@
 import pandas as pd
 import numpy as np
 import os
-import uuid
 import datetime
 
 OUTPUT_FOLDER = "datasets"
@@ -9,8 +8,7 @@ OUTPUT_FOLDER = "datasets"
 def generate_multiclass_data(total_samples=3000, attack_ratios=None):
     """
     :param total_samples: Total rows to generate (master limit)
-    :param attack_ratios: Dict of ratios per attack type, e.g. {'fdi': 0.1, 'dos': 0.2}
-                          Sum of ratios should ideally be <= 1.0.
+    :param attack_ratios: Dict of ratios per attack type.
     """
     if attack_ratios is None: attack_ratios = {'fdi': 0.0, 'dos': 0.0}
     
@@ -28,7 +26,6 @@ def generate_multiclass_data(total_samples=3000, attack_ratios=None):
     # The remainder is Normal traffic
     n_normal = total_samples - total_malicious
     if n_normal < 0:
-        # Failsafe: If percentages exceed 100%, clip normal to 0 and warn
         print("Warning: Attack percentages exceed 100%. Adjusting.")
         n_normal = 0
 
@@ -46,7 +43,7 @@ def generate_multiclass_data(total_samples=3000, attack_ratios=None):
         })
         dfs.append(df_normal)
 
-    # 3. GENERATE ATTACKS (Dynamically based on dictionary keys)
+    # 3. GENERATE ATTACKS
     # FDI Attack (Label 1)
     if counts.get('fdi', 0) > 0:
         n = counts['fdi']
@@ -69,25 +66,35 @@ def generate_multiclass_data(total_samples=3000, attack_ratios=None):
         })
         dfs.append(df_dos)
 
-    # 4. COMBINE & METADATA
+    # 4. COMBINE & SIMULATE TIME
     if not dfs:
-        return {"error": "No data generated (check percentages)"}
+        return {"error": "No data generated"}
 
     df_final = pd.concat(dfs)
+    
+    # Randomize the rows so attacks are mixed in with normal traffic
     df_final = df_final.sample(frac=1).reset_index(drop=True)
 
-    timestamp = datetime.datetime.now().strftime("%Y%m%d")
-    unique_suffix = str(uuid.uuid4())[:4]
-    dataset_id = f"Grid-Data-{timestamp}-{unique_suffix}"
+    # --- TIMESTAMP LOGIC ---
+    # Start 'now' and increment by 1 second for every subsequent row
+    start_time = datetime.datetime.now()
+    time_deltas = pd.to_timedelta(np.arange(len(df_final)), unit='s')
     
-    df_final['dataset_id'] = dataset_id
-    cols = ['dataset_id'] + [col for col in df_final.columns if col != 'dataset_id']
+    # Assign the timestamp column
+    df_final['timestamp'] = start_time + time_deltas
+
+    # Reorder columns: timestamp first, then features, then label
+    cols = ['timestamp', 'voltage', 'current', 'temperature', 'label']
     df_final = df_final[cols]
 
     # 5. SAVE
     if not os.path.exists(OUTPUT_FOLDER): os.makedirs(OUTPUT_FOLDER)
-    filename = f"{dataset_id}.csv"
+    
+    # Use simple timestamp for filename
+    file_ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"grid_data_{file_ts}.csv"
     file_path = os.path.join(OUTPUT_FOLDER, filename)
+    
     df_final.to_csv(file_path, index=False)
     
     return {
@@ -96,6 +103,15 @@ def generate_multiclass_data(total_samples=3000, attack_ratios=None):
         "breakdown": {
             "normal": n_normal,
             **counts
-        },
-        "dataset_id": dataset_id
+        }
     }
+
+if __name__ == "__main__":
+    result = generate_multiclass_data(
+        total_samples=5000,
+        attack_ratios={
+            'fdi': 0.1,  # 10% FDI
+            'dos': 0.15  # 15% DoS
+        }
+    )
+    print("Data Generation Result:", result)

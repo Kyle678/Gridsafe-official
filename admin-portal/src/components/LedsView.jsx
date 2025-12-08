@@ -143,7 +143,7 @@ const LedsView = () => {
                   </button>
                   
                   <button 
-                    onClick={() => sendColor(255, 140, 0, "Caught (Orange)")}
+                    onClick={() => sendColor(255, 80, 0, "Caught (Orange)")}
                     disabled={isSending}
                     className="py-4 rounded-lg bg-orange-500 hover:bg-orange-400 text-white font-bold shadow-lg shadow-orange-900/20 transition-all active:scale-95"
                   >
