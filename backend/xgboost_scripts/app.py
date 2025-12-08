@@ -294,8 +294,8 @@ def simulate_model():
 
         # 5. Convert to JSON
         # We limit to 2000 rows by default to prevent crashing the browser if the file is huge
-        if len(df_full) > 2000:
-            df_full = df_full.head(2000)
+        #if len(df_full) > 2000:
+        #    df_full = df_full.head(2000)
 
         result_json = df_full.to_dict(orient='records')
         

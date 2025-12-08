@@ -106,20 +106,41 @@ const SimulationView = () => {
     const row = simulationData[currentIndex];
     if (!row) return;
 
-    // A. Logic & Stats
+// A. Logic & Stats
     const isAttackPredicted = row.predicted !== 0;
     const isActuallyAttack = row.actual !== 0;
     const isCorrect = row.predicted === row.actual;
-    const isMissedAttack = isActuallyAttack && !isAttackPredicted;
+    // Missed = It was an attack, but we predicted 0 (Safe)
+    const isMissedAttack = isActuallyAttack && !isAttackPredicted; 
+    // Caught = It was an attack, and we predicted !0 (Attack)
+    const isCaughtAttack = isActuallyAttack && isAttackPredicted;
 
     // B. Trigger LED
-    if (isPlaying && isAttackPredicted) {
+    if (isPlaying) {
+        // 1. Determine Color based on Performance
+        let color = { r: 0, g: 255, b: 0 }; // Default: Green (Safe/Normal)
+
+        if (isMissedAttack) {
+            // RED: DANGER - The model failed to stop an attack
+            color = { r: 255, g: 0, b: 0 }; 
+        } else if (isCaughtAttack) {
+            // ORANGE: WARNING - Attack happening, but system caught it
+            color = { r: 255, g: 50, b: 0 }; 
+        } else if (isAttackPredicted && !isActuallyAttack) {
+            // (Optional) False Positive: System panicked but it was safe
+            // Let's make this Yellow/Orange too to show system activity
+            color = { r: 255, g: 200, b: 0 };
+        }
+
+        // 2. Send Request (We send it on every tick now to ensure color updates immediately)
         fetch(`http://${ledIp}:8000/set-color`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 section: targetSection,
-                r: 255, g: 0, b: 0
+                r: color.r,
+                g: color.g,
+                b: color.b
             })
         }).catch(() => {});
     }
@@ -318,7 +339,7 @@ const SimulationView = () => {
                      Live Traffic Feed
                  </h3>
                  <span className="text-xs text-slate-500 font-mono">
-                     {currentIndex} / {simulationData.length}
+                     {currentIndex + 1} / {simulationData.length}
                  </span>
              </div>
              
